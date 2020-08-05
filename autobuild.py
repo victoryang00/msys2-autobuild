@@ -184,6 +184,7 @@ def build_package(pkg, builddir):
 
         try:
             run_cmd([
+                'winpty',
                 makepkg,
                 '--noconfirm',
                 '--noprogressbar',
@@ -198,6 +199,7 @@ def build_package(pkg, builddir):
             if not is_msys:
                 env['MINGW_INSTALLS'] = 'mingw64'
             run_cmd([
+                'winpty',
                 makepkg,
                 '--noconfirm',
                 '--noprogressbar',
