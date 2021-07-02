@@ -56,7 +56,7 @@ class Config:
     MINGW_SRC_ARCH: ArchType = "mingw64"
     """The arch that is used to build the source package (any mingw one should work)"""
 
-    REPO = "msys2/msys2-autobuild"
+    REPO = "jeremyd2019/msys2-autobuild"
     """The path of this repo (used for accessing the assets)"""
 
     SOFT_JOB_TIMEOUT = 60 * 60 * 4
