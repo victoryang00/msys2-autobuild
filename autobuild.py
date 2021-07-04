@@ -65,7 +65,7 @@ class Config:
     ]
     """Packages that take too long to build, and should be handled manually"""
 
-    MANUAL_BUILD_TYPE: List[str] = ['clangarm64']
+    MANUAL_BUILD_TYPE: List[str] = []
     """Build types that can't be built in CI"""
 
     IGNORE_RDEP_PACKAGES: List[str] = [
@@ -877,15 +877,15 @@ def get_workflow() -> Workflow:
 def get_job_meta() -> List[Dict[str, Any]]:
     job_meta: List[Dict[str, Any]] = [
         {
-            "build-types": ["mingw64"],
+            "build-types": ["mingw-src"],
             "matrix": {
                 "packages": "base-devel mingw-w64-x86_64-toolchain git",
-                "build-args": "--build-types mingw64",
+                "build-args": "--build-types mingw-src",
                 "name": "mingw64",
                 "runner": "windows-latest"
             }
         }, {
-            "build-types": ["mingw32"],
+            "build-types": [],
             "matrix": {
                 "packages": "base-devel mingw-w64-i686-toolchain git",
                 "build-args": "--build-types mingw32",
@@ -893,7 +893,7 @@ def get_job_meta() -> List[Dict[str, Any]]:
                 "runner": "windows-latest"
             }
         }, {
-            "build-types": ["ucrt64"],
+            "build-types": [],
             "matrix": {
                 "packages": "base-devel mingw-w64-ucrt-x86_64-toolchain git",
                 "build-args": "--build-types ucrt64",
@@ -901,7 +901,7 @@ def get_job_meta() -> List[Dict[str, Any]]:
                 "runner": "windows-latest"
             }
         }, {
-            "build-types": ["clang64"],
+            "build-types": [],
             "matrix": {
                 "packages": "base-devel mingw-w64-clang-x86_64-toolchain git",
                 "build-args": "--build-types clang64",
@@ -909,7 +909,7 @@ def get_job_meta() -> List[Dict[str, Any]]:
                 "runner": "windows-latest"
             }
         }, {
-            "build-types": ["clang32"],
+            "build-types": [],
             "matrix": {
                 "packages": "base-devel git",
                 "build-args": "--build-types clang32",
@@ -937,6 +937,8 @@ def get_job_meta() -> List[Dict[str, Any]]:
 
     # The job matching MINGW_SRC_ARCH should also build mingw-src
     for meta in job_meta:
+        if "mingw-src" in meta["build-types"]:
+            break
         if Config.MINGW_SRC_ARCH in meta["build-types"]:
             meta["build-types"].append("mingw-src")
             meta["matrix"]["build-args"] = meta["matrix"]["build-args"] + ",mingw-src"
