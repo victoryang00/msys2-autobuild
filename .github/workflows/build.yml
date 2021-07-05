@@ -111,13 +111,14 @@ jobs:
         python -m pip install --user 'wheel==0.36.2'
         python -m pip install --user -r requirements.txt
 
-    # Note that ARM64 prior to Win11 requires x86 msys, but this will install x64
-    - uses: msys2/setup-msys2@v2
+    - uses: jeremyd2019/setup-msys2@v2_32
       with:
         msystem: MSYS
         update: true
         install: ${{ matrix.packages }}
         location: 'D:\A'
+        bitness: ${{ startsWith(matrix.name, 'clangarm') && 32 || 64 }}
+        release: ${{ startsWith(matrix.name, 'clangarm') && 'false' || 'true' }}
 
     - name: Switch to the main mirror
       shell: msys2 {0}
