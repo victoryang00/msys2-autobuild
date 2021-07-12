@@ -24,6 +24,7 @@ import requests
 import shlex
 import time
 import tempfile
+import threading
 import shutil
 import json
 import io
@@ -36,6 +37,43 @@ from typing import Generator, Union, AnyStr, List, Any, Dict, Tuple, Set, Option
 ArchType = Literal["mingw32", "mingw64", "ucrt64", "clang64", "clang32", "clangarm64", "msys"]
 SourceType = Literal["mingw-src", "msys-src"]
 BuildType = Union[ArchType, SourceType]
+
+
+class TokenPollingThread(threading.Thread):
+    def __init__(self, polltime=1800):
+        super(TokenPollingThread, self).__init__()
+        self.daemon = True
+        self.polltime = polltime
+        self.lock = threading.Lock()
+        self.cond = threading.Condition(self.lock)
+        self.running = True
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.shutdown()
+        self.join()
+
+    def shutdown(self):
+        with self.lock:
+            self.running = False
+            self.cond.notify()
+
+    def run(self):
+        with self.lock:
+            while self.running:
+                self.cond.wait(self.polltime)
+                if not self.running:
+                    break
+                self.lock.release()
+                try:
+                    wait_for_api_limit_reset(min_remaining=-1, min_remaining_readonly=-1)
+                except Exception:
+                    traceback.print_exc(file=sys.stdout)
+                finally:
+                    self.lock.acquire()
 
 
 class Config:
@@ -500,7 +538,8 @@ def build_package(build_type: BuildType, pkg: Package, msys2_root: _PathLike, bu
 
     repo = get_main_repo()
 
-    with staging_dependencies(build_type, pkg, msys2_root, builddir), \
+    with TokenPollingThread(), \
+            staging_dependencies(build_type, pkg, msys2_root, builddir), \
             fresh_git_repo(pkg['repo_url'], repo_dir):
         pkg_dir = os.path.join(repo_dir, pkg['repo_path'])
 
