@@ -994,12 +994,12 @@ def write_build_plan(args: Any) -> None:
             jobs.append(job_info["matrix"])
             # XXX: If there is more than three builds we start two jobs with the second
             # one having a reversed build order
-            if build_count > 3:
+            if build_count > 3 and "ARM64" not in job_info["matrix"]["runner"]:
                 matrix = dict(job_info["matrix"])
                 matrix["build-args"] = matrix["build-args"] + " --build-from end"
                 matrix["name"] = matrix["name"] + "-2"
                 jobs.append(matrix)
-            if build_count > 9:
+            if build_count > 9 and "ARM64" not in job_info["matrix"]["runner"]:
                 matrix = dict(job_info["matrix"])
                 matrix["build-args"] = matrix["build-args"] + " --build-from middle"
                 matrix["name"] = matrix["name"] + "-3"
