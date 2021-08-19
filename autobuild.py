@@ -477,6 +477,9 @@ SigLevel=Never
         with backup_pacman_conf(msys2_root):
             to_add: Dict[ArchType, List[GitReleaseAsset]] = {}
             for dep_type, deps in pkg.get_depends(build_type).items():
+                # XXX HACK to deal with arm running i686 msys
+                if "arm" in build_type and dep_type == "msys":
+                    continue
                 assets = cached_assets.get_assets(dep_type)
                 for dep in deps:
                     for pattern in dep.get_build_patterns(dep_type):
