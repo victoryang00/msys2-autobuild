@@ -478,6 +478,9 @@ SigLevel=Never
             for dep_type in build_type_to_dep_types(build_type):
                 for dep in pkg.get_depends(dep_type):
                     repo_type = dep.get_repo_type()
+                    # XXX HACK to deal with arm running i686 msys
+                    if "arm" in build_type and repo_type == "msys":
+                        continue
                     assets = get_cached_assets(repo, "staging-" + repo_type)
                     for pattern in dep.get_build_patterns(dep_type):
                         for asset in assets:
