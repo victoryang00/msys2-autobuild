@@ -33,7 +33,7 @@ import io
 from datetime import datetime, timezone
 from enum import Enum
 from hashlib import sha256
-from typing import Generator, Union, AnyStr, List, Any, Dict, Tuple, Set, Optional
+from typing import Generator, Union, AnyStr, List, Any, Dict, Tuple, Set, Optional, Sequence
 
 
 class TokenPollingThread(threading.Thread):
@@ -158,32 +158,39 @@ class Package(dict):
     def __eq__(self, other: object) -> bool:
         return self is other
 
+    def _get_build(self, build_type: str) -> Dict:
+        return self["builds"].get(build_type, {})
+
     def get_status(self, build_type: str) -> PackageStatus:
-        return self.get("status", {}).get(build_type, PackageStatus.UNKNOWN)
+        build = self._get_build(build_type)
+        return build.get("status", PackageStatus.UNKNOWN)
 
     def get_status_details(self, build_type: str) -> Dict[str, Any]:
-        return self.get("status_details", {}).get(build_type, {})
+        build = self._get_build(build_type)
+        return build.get("status_details", {})
 
     def set_status(self, build_type: str, status: PackageStatus,
                    description: Optional[str] = None,
                    urls: Optional[Dict[str, str]] = None) -> None:
-        self.setdefault("status", {})[build_type] = status
+        build = self["builds"].setdefault(build_type, {})
+        build["status"] = status
         meta: Dict[str, Any] = {}
         if description:
             meta["desc"] = description
         if urls:
             meta["urls"] = urls
-        self.setdefault("status_details", {})[build_type] = meta
+        build["status_details"] = meta
 
     def is_new(self, build_type: str) -> bool:
-        return build_type in self.get("new", [])
+        build = self._get_build(build_type)
+        return build.get("new", False)
 
     def get_build_patterns(self, build_type: str) -> List[str]:
         patterns = []
         if build_type_is_src(build_type):
             patterns.append(f"{self['name']}-{self['version']}.src.tar.[!s]*")
         elif build_type in (Config.MINGW_ARCH_LIST + ["msys"]):
-            for item in self['packages'].get(build_type, []):
+            for item in self._get_build(build_type).get('packages', []):
                 patterns.append(f"{item}-{self['version']}-*.pkg.tar.zst")
         else:
             assert 0
@@ -194,7 +201,7 @@ class Package(dict):
         if build_type_is_src(build_type):
             names.append(f"{self['name']}-{self['version']}.failed")
         elif build_type in (Config.MINGW_ARCH_LIST + ["msys"]):
-            for item in self['packages'].get(build_type, []):
+            for item in self._get_build(build_type).get('packages', []):
                 names.append(f"{item}-{self['version']}.failed")
         else:
             assert 0
@@ -202,19 +209,28 @@ class Package(dict):
 
     def get_build_types(self) -> List[str]:
         build_types = [
-            t for t in self["packages"] if t in (Config.MINGW_ARCH_LIST + ["msys"])]
+            t for t in self["builds"] if t in (Config.MINGW_ARCH_LIST + ["msys"])]
         if self["source"]:
-            if any((k != 'msys') for k in self["packages"]):
+            if any((k != 'msys') for k in build_types):
                 build_types.append("mingw-src")
-            if "msys" in self["packages"]:
+            if "msys" in build_types:
                 build_types.append("msys-src")
         return build_types
 
-    def get_depends(self, build_type: str) -> "Set[Package]":
-        return self['ext-depends'].get(build_type, set())
+    def _get_dep_build(self, build_type: str) -> Dict:
+        if build_type == "mingw-src":
+            build_type = Config.MINGW_SRC_ARCH
+        elif build_type == "msys-src":
+            build_type = "msys"
+        return self._get_build(build_type)
 
-    def get_rdepends(self, build_type: str) -> "Set[Package]":
-        return self['ext-rdepends'].get(build_type, set())
+    def get_depends(self, build_type: str) -> "Dict[str, Set[Package]]":
+        build = self._get_dep_build(build_type)
+        return build.get('ext-depends', {})
+
+    def get_rdepends(self, build_type: str) -> "Dict[str, Set[Package]]":
+        build = self._get_dep_build(build_type)
+        return build.get('ext-rdepends', {})
 
     def get_repo_type(self) -> str:
         return "msys" if self['repo'].startswith('MSYS2') else "mingw"
@@ -238,14 +254,14 @@ def get_current_run_urls() -> Optional[Dict[str, str]]:
     return None
 
 
-def run_cmd(msys2_root: _PathLike, args: List[_PathLike], **kwargs: Any) -> None:
+def run_cmd(msys2_root: _PathLike, args: Sequence[_PathLike], **kwargs: Any) -> None:
     executable = os.path.join(msys2_root, 'usr', 'bin', 'bash.exe')
     env = clean_environ(kwargs.pop("env", os.environ.copy()))
     env["CHERE_INVOKING"] = "1"
     env["MSYSTEM"] = "MSYS"
     env["MSYS2_PATH_TYPE"] = "minimal"
 
-    def shlex_join(split_command: List[str]) -> str:
+    def shlex_join(split_command: Sequence[str]) -> str:
         # shlex.join got added in 3.8 while we support 3.6
         return ' '.join(shlex.quote(arg) for arg in split_command)
 
@@ -405,45 +421,34 @@ def backup_pacman_conf(msys2_root: _PathLike) -> Generator:
         os.replace(backup, conf)
 
 
-def build_type_to_dep_types(build_type: str) -> List[str]:
-    if build_type == "mingw-src":
-        build_type = Config.MINGW_SRC_ARCH
-    elif build_type == "msys-src":
-        build_type = "msys"
-
-    if build_type == "msys":
-        return [build_type]
-    else:
-        return ["msys", build_type]
-
-
-def build_type_to_rdep_types(build_type: str) -> List[str]:
-    if build_type == "mingw-src":
-        build_type = Config.MINGW_SRC_ARCH
-    elif build_type == "msys-src":
-        build_type = "msys"
-
-    if build_type == "msys":
-        return [build_type] + Config.MINGW_ARCH_LIST
-    else:
-        return [build_type]
-
-
 @contextmanager
 def staging_dependencies(
         build_type: str, pkg: Package, msys2_root: _PathLike,
         builddir: _PathLike) -> Generator:
     repo = get_repo()
 
-    def add_to_repo(repo_root, repo_type, asset):
-        repo_dir = Path(repo_root) / get_repo_subdir(repo_type, asset)
+    def add_to_repo(repo_root: str, repo_type: str, assets: List[GitReleaseAsset]) -> None:
+        repo_dir = Path(repo_root) / repo_type
         os.makedirs(repo_dir, exist_ok=True)
-        print(f"Downloading {get_asset_filename(asset)}...")
-        package_path = os.path.join(repo_dir, get_asset_filename(asset))
-        download_asset(asset, package_path)
 
-        repo_name = "autobuild-" + (
-            str(get_repo_subdir(repo_type, asset)).replace("/", "-").replace("\\", "-"))
+        todo = []
+        for asset in assets:
+            asset_path = os.path.join(repo_dir, get_asset_filename(asset))
+            todo.append((asset_path, asset))
+
+        def fetch_item(item):
+            asset_path, asset = item
+            download_asset(asset, asset_path)
+            return item
+
+        package_paths = []
+        with ThreadPoolExecutor(8) as executor:
+            for i, item in enumerate(executor.map(fetch_item, todo)):
+                asset_path, asset = item
+                print(f"[{i + 1}/{len(todo)}] {get_asset_filename(asset)}")
+                package_paths.append(asset_path)
+
+        repo_name = f"autobuild-{repo_type}"
         repo_db_path = os.path.join(repo_dir, f"{repo_name}.db.tar.gz")
 
         conf = get_python_path(msys2_root, "/etc/pacman.conf")
@@ -458,8 +463,9 @@ SigLevel=Never
 """)
                     h2.write(text)
 
-        run_cmd(msys2_root, ["repo-add", to_pure_posix_path(repo_db_path),
-                             to_pure_posix_path(package_path)], cwd=repo_dir)
+        args: List[_PathLike] = ["repo-add", to_pure_posix_path(repo_db_path)]
+        args += [to_pure_posix_path(p) for p in package_paths]
+        run_cmd(msys2_root, args, cwd=repo_dir)
 
     def get_cached_assets(
             repo: Repository, release_name: str, *, _cache={}) -> List[GitReleaseAsset]:
@@ -474,9 +480,9 @@ SigLevel=Never
         shutil.rmtree(repo_root, ignore_errors=True)
         os.makedirs(repo_root, exist_ok=True)
         with backup_pacman_conf(msys2_root):
-            to_add = []
-            for dep_type in build_type_to_dep_types(build_type):
-                for dep in pkg.get_depends(dep_type):
+            to_add: Dict[str, List[GitReleaseAsset]] = {}
+            for dep_type, deps in pkg.get_depends(build_type).items():
+                for dep in deps:
                     repo_type = dep.get_repo_type()
                     # XXX HACK to deal with arm running i686 msys
                     if "arm" in build_type and repo_type == "msys":
@@ -485,13 +491,13 @@ SigLevel=Never
                     for pattern in dep.get_build_patterns(dep_type):
                         for asset in assets:
                             if fnmatch.fnmatch(get_asset_filename(asset), pattern):
-                                to_add.append((repo_type, asset))
+                                to_add.setdefault(repo_type, []).append(asset)
                                 break
                         else:
                             raise SystemExit(f"asset for {pattern} in {repo_type} not found")
 
-            for repo_type, asset in to_add:
-                add_to_repo(repo_root, repo_type, asset)
+            for repo_type, assets in to_add.items():
+                add_to_repo(repo_root, repo_type, assets)
 
             # in case they are already installed we need to upgrade
             run_cmd(msys2_root, ["pacman", "--noconfirm", "-Suy"])
@@ -641,34 +647,40 @@ def run_build(args: Any) -> None:
 
 def get_buildqueue() -> List[Package]:
     pkgs = []
-    r = requests.get("https://packages.msys2.org/api/buildqueue", timeout=REQUESTS_TIMEOUT)
+    r = requests.get("https://packages.msys2.org/api/buildqueue2", timeout=REQUESTS_TIMEOUT)
     r.raise_for_status()
-    dep_mapping = {}
+
     for received in r.json():
         pkg = Package(received)
         pkg['repo'] = pkg['repo_url'].split('/')[-1]
         pkgs.append(pkg)
-        for repo, names in pkg['packages'].items():
-            for name in names:
+
+    # extract the package mapping
+    dep_mapping = {}
+    for pkg in pkgs:
+        for build in pkg['builds'].values():
+            for name in build['packages']:
                 dep_mapping[name] = pkg
 
     # link up dependencies with the real package in the queue
     for pkg in pkgs:
-        ver_depends: Dict[str, Set[Package]] = {}
-        for repo, deps in pkg['depends'].items():
-            for dep in deps:
-                ver_depends.setdefault(repo, set()).add(dep_mapping[dep])
-        pkg['ext-depends'] = ver_depends
+        for build in pkg['builds'].values():
+            ver_depends: Dict[str, Set[Package]] = {}
+            for repo, deps in build['depends'].items():
+                for dep in deps:
+                    ver_depends.setdefault(repo, set()).add(dep_mapping[dep])
+            build['ext-depends'] = ver_depends
 
     # reverse dependencies
     for pkg in pkgs:
-        r_depends: Dict[str, Set[Package]] = {}
-        for pkg2 in pkgs:
-            for repo, deps in pkg2['ext-depends'].items():
-                if pkg in deps:
-                    for r_repo in pkg2['packages'].keys():
-                        r_depends.setdefault(r_repo, set()).add(pkg2)
-        pkg['ext-rdepends'] = r_depends
+        for build in pkg['builds'].values():
+            r_depends: Dict[str, Set[Package]] = {}
+            for pkg2 in pkgs:
+                for r_repo, build2 in pkg2['builds'].items():
+                    for repo, deps in build2['ext-depends'].items():
+                        if pkg in deps:
+                            r_depends.setdefault(r_repo, set()).add(pkg2)
+            build['ext-rdepends'] = r_depends
 
     return pkgs
 
@@ -783,8 +795,8 @@ def get_buildqueue_with_status(full_details: bool = False) -> List[Package]:
             status = pkg.get_status(build_type)
             if status == PackageStatus.WAITING_FOR_BUILD:
                 missing_deps = set()
-                for dep_type in build_type_to_dep_types(build_type):
-                    for dep in pkg.get_depends(dep_type):
+                for dep_type, deps in pkg.get_depends(build_type).items():
+                    for dep in deps:
                         dep_status = dep.get_status(dep_type)
                         if dep_status != PackageStatus.FINISHED:
                             missing_deps.add(dep)
@@ -805,15 +817,15 @@ def get_buildqueue_with_status(full_details: bool = False) -> List[Package]:
                         continue
 
                     missing_deps = set()
-                    for dep_type in build_type_to_dep_types(build_type):
-                        for dep in pkg.get_depends(dep_type):
+                    for dep_type, deps in pkg.get_depends(build_type).items():
+                        for dep in deps:
                             dep_status = dep.get_status(dep_type)
                             if dep_status != PackageStatus.FINISHED:
                                 missing_deps.add(dep)
 
                     missing_rdeps = set()
-                    for dep_type in build_type_to_rdep_types(build_type):
-                        for dep in pkg.get_rdepends(dep_type):
+                    for dep_type, deps in pkg.get_rdepends(build_type).items():
+                        for dep in deps:
                             if dep["name"] in Config.IGNORE_RDEP_PACKAGES or \
                                     (build_type != dep_type and dep_type in Config.BUILD_TYPES_WIP):
                                 continue
@@ -970,7 +982,7 @@ def get_job_meta() -> List[Dict[str, Any]]:
         }, {
             "build-types": ["msys", "msys-src"],
             "matrix": {
-                "packages": "base-devel msys2-devel git",
+                "packages": "base-devel msys2-devel VCS",
                 "build-args": "--build-types msys,msys-src",
                 "name": "msys",
                 "runner": "windows-latest"
@@ -985,6 +997,7 @@ def get_job_meta() -> List[Dict[str, Any]]:
         if Config.MINGW_SRC_ARCH in meta["build-types"]:
             meta["build-types"].append("mingw-src")
             meta["matrix"]["build-args"] = meta["matrix"]["build-args"] + ",mingw-src"
+            meta["matrix"]["packages"] = meta["matrix"]["packages"] + " VCS"
             break
     else:
         raise Exception("Didn't find arch for building mingw-src")
@@ -1383,7 +1396,7 @@ def clear_failed_state(args: Any) -> None:
 
 
 def get_credentials(readonly: bool = True) -> Dict[str, Any]:
-    if readonly and "GITHUB_TOKEN_READONLY" in environ:
+    if readonly and environ.get("GITHUB_TOKEN_READONLY", ""):
         return {'login_or_token': environ["GITHUB_TOKEN_READONLY"]}
     elif "GITHUB_TOKEN" in environ:
         return {'login_or_token': environ["GITHUB_TOKEN"]}
