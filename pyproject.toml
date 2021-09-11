@@ -5,7 +5,7 @@ description = ""
 authors = ["Christoph Reiter <reiter.christoph@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.6"
+python = "^3.8"
 PyGithub = "^1.54.1"
 tabulate = "^0.8.7"
 requests = "^2.25.1"
@@ -13,7 +13,7 @@ requests = "^2.25.1"
 [tool.poetry.dev-dependencies]
 mypy = "^0.910"
 flake8 = "^3.8.4"
-types-tabulate = "^0.1.1"
+types-tabulate = "^0.8.2"
 types-requests = "^2.25.0"
 
 [build-system]
