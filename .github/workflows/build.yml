@@ -117,8 +117,8 @@ jobs:
         update: true
         install: ${{ matrix.packages }}
         location: 'D:\A'
-        bitness: ${{ startsWith(matrix.name, 'clangarm') && 32 || 64 }}
-        release: ${{ startsWith(matrix.name, 'clangarm') && 'false' || 'true' }}
+        bitness: ${{ runner.arch == 'ARM64' && 32 || 64 }}
+        release: ${{ runner.arch == 'ARM64' && 'false' || 'true' }}
 
     - name: Switch to the main mirror
       shell: msys2 {0}
