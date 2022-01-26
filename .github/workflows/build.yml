@@ -27,10 +27,6 @@ jobs:
 
     - uses: actions/checkout@v2
 
-    - uses: actions/setup-python@v2
-      with:
-        python-version: '3.8'
-
     - uses: actions/cache@v2
       with:
         path: ~\AppData\Local\pip\Cache
@@ -91,12 +87,6 @@ jobs:
         Get-CIMInstance -Class Win32_Processor | Select-Object -Property Name
 
     - uses: actions/checkout@v2
-
-    - uses: actions/setup-python@v2
-      with:
-        python-version: '3.8'
-        # Note that ARM64 prior to Win11 requires x86, but this will install x64
-        architecture: 'x64'
 
     - uses: actions/cache@v2
       with:
