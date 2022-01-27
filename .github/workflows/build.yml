@@ -24,8 +24,11 @@ jobs:
       run: |
         Get-PSDrive -PSProvider FileSystem
         Get-CIMInstance -Class Win32_Processor | Select-Object -Property Name
-
     - uses: actions/checkout@v2
+
+    - uses: actions/setup-python@v2
+      with:
+        python-version: '3.8'
 
     - uses: actions/cache@v2
       with:
@@ -33,14 +36,12 @@ jobs:
         key: ${{ runner.os }}-${{ runner.arch }}-pip-${{ hashFiles('**/requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-pip-
-
     - name: Install deps
       env:
         PIP_DISABLE_PIP_VERSION_CHECK: 1
       run: |
         python -m pip install --user 'wheel==0.37.1'
         python -m pip install --user -r requirements.txt
-
     - name: Check what we should run
       id: check
       env:
@@ -50,7 +51,6 @@ jobs:
         python -u autobuild.py write-build-plan build_plan.json
         $buildPlan = Get-Content build_plan.json -Raw
         echo "::set-output name=build-plan::$buildPlan"
-
     - name: Clean up assets
       if: steps.check.outputs.build-plan != '[]'
       env:
@@ -58,7 +58,6 @@ jobs:
         GITHUB_TOKEN_READONLY: ${{ secrets.GITHUBTOKENREADONLY }}
       run: |
         python -u autobuild.py clean-assets
-
     - name: Show build queue
       if: steps.check.outputs.build-plan != '[]'
       env:
@@ -66,7 +65,6 @@ jobs:
         GITHUB_TOKEN_READONLY: ${{ secrets.GITHUBTOKENREADONLY }}
       run: |
         python -u autobuild.py show
-
   build:
     needs: schedule
     timeout-minutes: 4320
@@ -85,8 +83,13 @@ jobs:
       run: |
         Get-PSDrive -PSProvider FileSystem
         Get-CIMInstance -Class Win32_Processor | Select-Object -Property Name
-
     - uses: actions/checkout@v2
+
+    - uses: actions/setup-python@v2
+      with:
+        python-version: '3.8'
+        # Note that ARM64 prior to Win11 requires x86, but this will install x64
+        architecture: 'x64'
 
     - uses: actions/cache@v2
       with:
@@ -94,14 +97,12 @@ jobs:
         key: ${{ runner.os }}-${{ runner.arch }}-pip-${{ hashFiles('**/requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-pip-
-
     - name: Install deps
       env:
         PIP_DISABLE_PIP_VERSION_CHECK: 1
       run: |
         python -m pip install --user 'wheel==0.37.1'
         python -m pip install --user -r requirements.txt
-
     # Note that ARM64 prior to Win11 requires x86 msys, but this will install x64
     - uses: msys2/setup-msys2@v2
       with:
@@ -119,13 +120,11 @@ jobs:
         grep -qF '[clang32]' /etc/pacman.conf || sed -i '1s|^|[clang32]\nServer = http://repo.msys2.org/mingw/clang32/\n|' /etc/pacman.conf
         grep -qF '[clangarm64]' /etc/pacman.conf || sed -i '1s|^|[clangarm64]\nServer = http://repo.msys2.org/mingw/clangarm64/\n|' /etc/pacman.conf
         pacman-conf.exe
-
     - name: Update using the main mirror & Check install
       run: |
         msys2 -c 'pacman --noconfirm -Suuy'
         msys2 -c 'pacman --noconfirm -Suu'
         msys2 -c 'pacman -Qkq'
-
     - name: Process build queue
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
