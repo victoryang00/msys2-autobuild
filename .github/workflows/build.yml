@@ -5,16 +5,21 @@ on:
   schedule:
     - cron: '0 0/4 * * *'
 
-permissions:
-  contents: write
-
 concurrency: nope
 
 jobs:
 
   schedule:
     runs-on: self-hosted
+    
+    permissions:
+      # required for all workflows
+      security-events: write
 
+      # only required for workflows in private repositories
+      actions: write
+      contents: write
+      
     outputs:
       build-plan: ${{ steps.check.outputs.build-plan }}
 
